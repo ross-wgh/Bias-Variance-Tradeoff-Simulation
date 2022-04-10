@@ -1,0 +1,203 @@
+---
+title: "Simulation Study to Illustrate Bias-Variance Tradeoff"
+author: Ross Woleben
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(ggplot2)
+```
+This file is a supplement to an article I wrote on my website explaining the bias-variance tradeoff. 
+The article provides additional context to the motivations of this simulation and can be found at https://www.rosswoleben.com/projects/bias-variance-tradeoff-simulation .
+
+## Bias Variance Decomposition
+$$ MSE(x) = E[f(x)-\hat f(x)]^2 $$
+$$ =E[\hat f(x) - E[\hat f(x)] + E[\hat f(x)]-f(x)]^2$$
+$$ = E[\hat f(x) - E[\hat f(x)]^2  + E[E[\hat f(x)]-f(x)]^2 + 2E[\hat f(x)-E[\hat f(x)]E[E[\hat f(x)]-f(x)]$$
+$$ = E[\hat f(x)]-E[\hat f(x)]]^2 + E[E[\hat f(x)]-f(x)]^2$$
+$$ = E[\hat f(x)]-E[\hat f(x)]]^2 + (E[\hat f(x)]-f(x))^2 $$
+$$ = Var(\hat f(x))+ Bias(\hat f(x))^2$$
+Where $Var(\hat f(x))+ Bias(\hat f(x))^2$ is the reducible error of a model.
+
+In reality, data often comes with noise that may or may not be a function of the input. This is known as irreducible error. 
+Therefore, the MSE is really the sum of reducible and irreducible error. 
+So in our derivation, we can redefine our function as y = f(x) + error ($\epsilon$)
+$$MSE =  E[y -\hat f(x)^2] $$
+$$= E[f(x) + \epsilon-\hat f(x)]^2 $$
+$$ = E[f(x) - \hat f(x)]^2  + E[\epsilon]^2+2E[\epsilon(f(x)-\hat f(x)]$$
+$$ = [Var(\hat f(x)) + Bias(\hat f(x))^2] + Var(\epsilon)$$
+$$ = Reducible\space Error + Irreducible\space Error $$
+ 
+
+If our model is perfect, the reducible error is 0 and all we are left with is the underlying noise of the data.
+
+The goal of a model is to minimize the reducible error, which means finding a balance between the variance and squared bias of a model.
+
+So, with all that said, lets generate some data to illustrate the Bias/Variance Tradeoff
+
+```{r}
+set.seed(4)
+x = seq(-5,5, length.out = 500) #x is effectively a uniform distribution
+error = rnorm(50, mean = 2, sd = 5)
+y = 2*x + 5*x^2 + error
+```
+Our arbitrary function is defined as $y = 2x + 5x^2 + \epsilon$, where x effectively follows a uniform distribution (x ~ Unif(-5,5))
+
+We can use this generated data to train 1,2,3, and 5 degree polynomial models.
+```{r}
+plot(x,y)
+model1 = lm(y~x)
+model2 = lm(y ~ poly(x,2, raw = T))
+model3 = lm(y ~ poly(x,3, raw = T))
+model5 = lm(y ~ poly(x,5, raw = T))
+```
+Before we investigate our training MSEs, what are the coefficient estimates of our models?
+```{r}
+model1$coefficients
+model2$coefficients
+model3$coefficients
+model5$coefficients
+```
+
+***Note that the coefficient estimates of each model are random variables as they are calculated from the random generated data. Different coefficients will result in different quantities for the variance, bias, and expected values of our models.If the data was generated with a different seed, each model would have slightly different coefficient estimates than what is seen here. Models with many coefficient estimates are especially susceptible to variable coefficients (hence high complexity models have high variance).
+
+```{r}
+m1_pred = predict(model1, data.frame(x=x))
+m2_pred = predict(model2, data.frame(x=x))
+m3_pred = predict(model3, data.frame(x=x))
+m5_pred = predict(model5, data.frame(x=x))
+
+train_mses = data.frame(tmse = c(mean((m1_pred - y)^2),mean((m2_pred - y)^2),mean((m3_pred - y)^2),mean((m5_pred - y)^2)), polynomial_degree= c(1,2,3,5))
+train_mses
+```
+
+As you can see, the training MSE is smallest with the 5th degree model. That means this model fits the training data the best, but does that mean that it is the best overall model?
+
+No! The 2nd degree polynomial will be the best model to use because we know the data is generated from a quadratic equation. So how do we show that a quadratic model is indeed the best?
+
+To do that we need to get into the prediction world. We know that in our training data, where x spans from -5 to 5, the 5th degree polynomial has the best fit. But what happens when we expand that interval?
+
+## Calculating the Expected Testing MSE
+Now we want to expand our range of x values to see how well the models perform with data they aren't familiar with.
+Let's say that our new x interval spans from -15 to 15, so x~Unif(-15,15).
+
+In order to calculate the Bias of each respective model, we need first need to calculate the expected value of the true function.
+
+ $$E[f(x)] = E[2x + 5x^2 + \epsilon ]$$
+ $$= 2E[x] + 5E[x^2] + E[\epsilon ] $$
+Since x is effectively a uniform distribution, we can use the Uniform probability density function to calculate the corresponding moments needed for expected value and variance calculations.
+
+When X follows a uniform distribution (X~ Uniform(a,b)), $E(X) = \int_{a}^b x*\frac{1}{b-a} dx$. We can also save some time with our calculations because the expected value for any odd moment of a Uniform distribution is 0 when b = -a. 
+So with our X ranging from -15, 15 (X~Uniform(-15,15)):
+$$E[x] = \int_{-15}^{15}x*\frac{1}{30} = \frac{x^2}{60}|_{-15}^{15} = \frac{15^2}{60} - \frac{(-15)^2}{60} = \frac{225}{60}- \frac{225}{60} = 0$$
+$$E[x^2] = \int_{-15}^{15}x^2*\frac{1}{30} = \frac{x^3}{90}|_{-15}^{15} = \frac{15^3}{90} - \frac{(-15)^3}{90} = \frac{3375}{90}+ \frac{6750}{90} = 75 $$
+$$ 2E[x] + 5E[x^2] + E[\epsilon ] = 2(0)+5(75)+2 = 377 = E[f(x)]$$
+Now that we have Expectation of f(x), we can calculate the expectation of each model and find their respecitve biases.
+
+Let's start out with the linear model $\hat f_1(x) = 1.9527x + 45.0077$
+$$E[\hat f_1(X)] = 1.9527E[x]+45.008 = 1.953(0)+45.0077 = 45.0077$$
+$$Bias(\hat f(x), f(x)) = E(\hat f(x) - f(x)) = E(\hat f(x)) - E[f(x)]$$
+$$ Bias(\hat f_1(x), f(x)) =  45.0077 - 377 = -331.9923$$
+
+Since both models use the same underlying random variable (x) with no covariates, the model variance calculation is fairly straightforward. We can further streamline the calculation by ignoring the constants because $Var(X+c) = Var(X)$ is a fundamental concept of variance.
+
+$$Var(\hat f(X)-f(x)) = E[(\hat f(X)-f(x))^2] - E[\hat f(X)-f(x)]^2$$
+So for the linear model:
+$$Var(\hat f_1(x)-f(x)) = Var(1.9527x-(5x^2+2x)) = Var(-(5x^2+.0473x)) = Var(5x^2+.0473x)$$
+$$ Var(5x^2+.0473x) = E[(5x^2+.0473x)^2]-E[5x^2+.0473x] ^2 $$
+$$ = E[25x^4+.473x^3+.0022x^2]- (5E[x^2] + .0473E[x])^2$$
+We need to find the 4th moment of x to calculate this quantity.
+$$E[x^4] = \int_{-15}^{15}x^4*\frac{1}{30} = \frac{x^5}{120}|_{-15}^{15} = \frac{15^5}{120} - \frac{(-15)^5}{120} = \frac{759375}{120}+ \frac{759375}{120} = 10125 $$
+$$E[25x^4+.473x^3+.0022x^2]- (5E[x^2] + .0473E[x])^2 = 25(10125)+.0022(75) - (5(75))^2 $$
+$$ = 253125.168 - 140625 \approx 112500 =Var(\hat f_1(x)-f(x))$$
+
+Once again, the Expected MSE of a model is defined as $Var(\hat f(x)) + Bias(\hat f(x))^2 + Var(\epsilon)$
+
+So the Expected MSE of the linear model is 
+$$ 112500 + 331.9923^2 + 25 = 222718.887$$
+
+Now we can repeat the process for the quadratic and cubic models.
+For the quadratic model
+$$E[\hat{f_2}(X)] = E[4.999x^2 + 1.9527x + 3.18956] = 4.999E[x^2]+1.9527E[x]+3.18956 = 4.999(75)+3.18956 = 378.115$$
+$$ Bias(\hat f_2(x), f(x)) =  378.115 - 377 = 1.115$$
+$$ Var(\hat f_2(x)-f(x)) = Var(4.99882x^2+1.9527x+3.184-(2x+5x^2)) = Var(.00118x^2+.0473x)$$ 
+$$=E[(.00118x^2+.0473x)^2] - E[(.00118x^2+.0473x)]^2 $$
+$$ = E[.0000014x^4+.0022x^2]- (.00118E[x^2]) $$
+$$ = .0000014(10125)+.0022(75) - (.00118(75))^2 $$
+
+$$ = 0.1818948 - .0079388 = .174 = Var(\hat f_2(x)-f(x))$$
+So the Expected MSE of the quadratic model is 
+$$ .174 + 1.115^2 + 25 = 26.417225$$
+
+And for the cubic model:
+$$E[\hat{f_3}(X)] = E[-.0108x^3 + 4.999x^2 + 2.117x + 3.18956]$$ 
+$$= -.0108E[x^3]4.999E[x^2]+2.117E[x]+3.18956 $$
+$$= 4.999(75)+3.18956 = 378.115$$
+Since $E[\hat{f_3}(X)] = E[\hat{f_2}(X)]$, $Bias(\hat f_3(x), f(x)) = Bias(\hat f_2(x), f(x)) = 1.115$
+
+Next we calculate the Variance of $\hat{f_3}(X)$
+$$ Var(\hat f_3(x)-f(x)) = Var(.011x^3+.0012x^2-.11659x)$$ 
+$$ = E[.00012x^6-.002564x^4+.0136x^2] - E[.011x^3+.0012x^2-.11659x]^2$$
+
+
+$$ = 171.95873 - .9 = 171.05873$$
+
+So the Expected MSE of the cubic model is 
+$$ 171.05873 + 1.115^2 + 25 = 197.302$$
+
+As you can see, as the polynomial order increases, the Variance (and complexity of the variance calculation) quickly grows. In order to calculate the variance of a n-degree polynomial, a 2*n-th moment needs to be calculated.
+On the other hand, the bias will slowly approach zero as the approximation model starts modeling the error term.
+
+Because the variance calculation becomes much more complicated, we can just use a simulation to show the growing variance, and corresponding MSE of the 5th degree polynomial.
+
+We can still calculate the Biases though:
+
+$$ E[\hat f_5(x)] = -.0008155E[x^4]+5.0164E[x^2]+3.14 = -.0008155(10125)+5.0164(75)+3.14 =371.113$$
+It turns out that the bias of the 5th degree polynomial is actually higher than the 2nd and 3rd degrees. This is because the coefficients generated by the training data with x values spanning -5 to 5 did not generalize well to a larger x interval of -15 to 15.
+
+Now that we have done all of the theoretical calculations, lets see the MSEs of our simulation.
+
+```{r}
+m1_mse = rep(0,1000)
+m2_mse = rep(0,1000)
+m3_mse = rep(0,1000)
+m5_mse = rep(0,1000)
+var5 = rep(0,1000)
+
+for(i in 1:1000){
+  #We expand the range of X to illustrate the the cubic model is only accurate upon the interval of the training data (-5<x<5)
+  x_new = runif(500,-15,15)
+  error_new = rnorm(500,2,5)
+  y_test = 2* x_new + 5*x_new^2 + error_new
+  
+  m1_pred = predict(model1, data.frame(x=x_new))
+  m2_pred = predict(model2, data.frame(x=x_new))
+  m3_pred = predict(model3, data.frame(x=x_new))
+  m5_pred = predict(model5, data.frame(x=x_new))
+  
+  var5[i] = var( - (2*x_new + 5*x_new^2))
+
+  m1_mse[i] = mean((m1_pred - y_test)^2)
+  m2_mse[i] = mean((m2_pred - y_test)^2)
+  m3_mse[i] = mean((m3_pred - y_test)^2)
+  m5_mse[i] = mean((m5_pred - y_test)^2)
+}
+```
+
+```{r echo = F}
+model_in = data.frame(model = c(1,2,3,5), sim_mse = c(mean(m1_mse) , mean(m2_mse) ,mean(m3_mse) , mean(m5_mse)), bias = c( -331.9923, 1.115 ,  1.115, -5.887 ), variance = c(112500, .174 , 171.06, mean(var5)))
+#Where the variance of the 5th degree model was calculated in the simulation
+model_in
+
+ggplot(model_in, aes(c(1,2,3,5), sim_mse, color = 'MSE')) + geom_point() + 
+  geom_point(data = model_in, aes(c(1,2,3,5), variance, color = 'Variance')) + 
+  geom_point(data = model_in, aes(c(1,2,3,5), bias^2, color = 'Bias^2')) +
+  geom_line(data = model_in, aes(c(1,2,3,5), sim_mse, color = 'MSE')) + 
+  geom_line(data = model_in, aes(c(1,2,3,5), variance, color = 'Variance')) + 
+  geom_line(data = model_in, aes(c(1,2,3,5), bias^2, color = 'Bias^2')) + xlab("Model Complexity (Polynomial Degree)") + ylab('log10(y)') + scale_y_log10() + theme(legend.position = c(.9, .6), legend.title = element_blank(), legend.background = element_blank())
+#show plots of training mse (bias, var, irred error)
+#show plots of testing mse(bias, var, irred error), plus simulation
+```
+
+See article https://www.rosswoleben.com/projects/bias-variance-tradeoff-simulation at for conclusion.
